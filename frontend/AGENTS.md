@@ -48,6 +48,19 @@ index from the dnd-kit event, then calls `moveCard`.
 - E2E: `npm run test:e2e` (Playwright). `playwright.config.ts` starts `next dev` on `localhost:3000` automatically (`webServer`).
 - Lint: `npm run lint` (ESLint flat config via `eslint.config.mjs`)
 
+## Auth flow (Part 4)
+
+All API calls live in `src/lib/api.ts` (`fetchMe`, `login`, `logout`). They
+use relative URLs (`/api/…`) so they hit the same origin when served by
+FastAPI, or can be overridden via `NEXT_PUBLIC_API_URL` for local dev.
+
+`page.tsx` calls `fetchMe()` on mount and stores the result as an
+`AuthState` (`loading | unauthenticated | authenticated`). Unauthenticated
+→ `Login` component; authenticated → `Board` + "Sign out" button.
+
+`src/components/Login.tsx` — login form, calls `api.login`, shows an
+inline `<p role="alert">` on failure, calls `onSuccess()` on success.
+
 ## Conventions
 
 - Components are function components with named exports (no default exports except pages/layout)
