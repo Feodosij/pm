@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest'
-import { boardReducer } from '../src/lib/store'
-import type { BoardState } from '../src/lib/types'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { renderHook, act } from '@testing-library/react'
+import { useBoard } from '../src/lib/store'
+import * as api from '../src/lib/api'
 
-const baseState: BoardState = {
+vi.mock('../src/lib/api')
+
+const mockBoard = {
+  id: '1',
+  title: 'My Board',
   columns: [
     {
       id: 'col1',
@@ -16,73 +21,88 @@ const baseState: BoardState = {
   ],
 }
 
-describe('boardReducer', () => {
-  it('adds a card to the specified column', () => {
-    const next = boardReducer(baseState, {
-      type: 'ADD_CARD',
-      columnId: 'col1',
-      title: 'New Task',
-      details: 'Some details',
-    })
-    expect(next.columns[0].cards).toHaveLength(3)
-    expect(next.columns[0].cards[2].title).toBe('New Task')
-    expect(next.columns[0].cards[2].details).toBe('Some details')
-    expect(next.columns[0].cards[2].id).toBeTruthy()
+beforeEach(() => {
+  vi.mocked(api.fetchBoard).mockResolvedValue(mockBoard)
+  vi.mocked(api.apiCreateCard).mockResolvedValue({ id: 'new', title: 'New', details: '' })
+  vi.mocked(api.apiEditCard).mockResolvedValue({ id: 'card1', title: 'Edited', details: 'New details' })
+  vi.mocked(api.apiDeleteCard).mockResolvedValue(undefined)
+  vi.mocked(api.apiMoveCard).mockResolvedValue({ id: 'card1', title: 'Task 1', details: 'Details 1' })
+  vi.mocked(api.apiRenameColumn).mockResolvedValue(undefined)
+})
+
+describe('useBoard', () => {
+  it('starts in loading state', () => {
+    const { result } = renderHook(() => useBoard())
+    expect(result.current.loading).toBe(true)
   })
 
-  it('does not mutate other columns when adding a card', () => {
-    const next = boardReducer(baseState, {
-      type: 'ADD_CARD',
-      columnId: 'col1',
-      title: 'X',
-      details: '',
-    })
-    expect(next.columns[1].cards).toHaveLength(0)
+  it('loads board on reload()', async () => {
+    const { result } = renderHook(() => useBoard())
+    await act(() => result.current.reload())
+    expect(result.current.loading).toBe(false)
+    expect(result.current.columns).toHaveLength(2)
+    expect(result.current.columns[0].title).toBe('Backlog')
   })
 
-  it('deletes a card from a column', () => {
-    const next = boardReducer(baseState, {
-      type: 'DELETE_CARD',
-      columnId: 'col1',
-      cardId: 'card1',
-    })
-    expect(next.columns[0].cards).toHaveLength(1)
-    expect(next.columns[0].cards[0].id).toBe('card2')
+  it('sets error when fetchBoard rejects', async () => {
+    vi.mocked(api.fetchBoard).mockRejectedValue(new Error('Network error'))
+    const { result } = renderHook(() => useBoard())
+    await act(() => result.current.reload())
+    expect(result.current.error).toBe('Network error')
+    expect(result.current.loading).toBe(false)
   })
 
-  it('moves a card to another column', () => {
-    const next = boardReducer(baseState, {
-      type: 'MOVE_CARD',
-      sourceColumnId: 'col1',
-      destColumnId: 'col2',
-      cardId: 'card1',
-      destIndex: 0,
-    })
-    expect(next.columns[0].cards).toHaveLength(1)
-    expect(next.columns[0].cards[0].id).toBe('card2')
-    expect(next.columns[1].cards).toHaveLength(1)
-    expect(next.columns[1].cards[0].id).toBe('card1')
+  it('addCard appends the new card to the correct column', async () => {
+    vi.mocked(api.apiCreateCard).mockResolvedValue({ id: 'new1', title: 'New Task', details: 'desc' })
+    const { result } = renderHook(() => useBoard())
+    await act(() => result.current.reload())
+    await act(() => result.current.addCard('col1', 'New Task', 'desc'))
+    const col1 = result.current.columns.find(c => c.id === 'col1')!
+    expect(col1.cards.at(-1)?.title).toBe('New Task')
   })
 
-  it('reorders a card within the same column', () => {
-    const next = boardReducer(baseState, {
-      type: 'MOVE_CARD',
-      sourceColumnId: 'col1',
-      destColumnId: 'col1',
-      cardId: 'card1',
-      destIndex: 1,
-    })
-    expect(next.columns[0].cards[0].id).toBe('card2')
-    expect(next.columns[0].cards[1].id).toBe('card1')
+  it('editCard updates the card in state', async () => {
+    const { result } = renderHook(() => useBoard())
+    await act(() => result.current.reload())
+    await act(() => result.current.editCard('card1', 'Edited', 'New details'))
+    const col1 = result.current.columns.find(c => c.id === 'col1')!
+    expect(col1.cards[0].title).toBe('Edited')
+    expect(col1.cards[0].details).toBe('New details')
   })
 
-  it('renames a column', () => {
-    const next = boardReducer(baseState, {
-      type: 'RENAME_COLUMN',
-      columnId: 'col1',
-      title: 'Renamed',
-    })
-    expect(next.columns[0].title).toBe('Renamed')
-    expect(next.columns[1].title).toBe('In Progress')
+  it('deleteCard removes the card from state', async () => {
+    const { result } = renderHook(() => useBoard())
+    await act(() => result.current.reload())
+    await act(() => result.current.deleteCard('col1', 'card1'))
+    const col1 = result.current.columns.find(c => c.id === 'col1')!
+    expect(col1.cards).toHaveLength(1)
+    expect(col1.cards[0].id).toBe('card2')
+  })
+
+  it('moveCard moves a card to another column in state', async () => {
+    const { result } = renderHook(() => useBoard())
+    await act(() => result.current.reload())
+    await act(() => result.current.moveCard('col1', 'col2', 'card1', 0))
+    const col1 = result.current.columns.find(c => c.id === 'col1')!
+    const col2 = result.current.columns.find(c => c.id === 'col2')!
+    expect(col1.cards).toHaveLength(1)
+    expect(col2.cards).toHaveLength(1)
+    expect(col2.cards[0].id).toBe('card1')
+  })
+
+  it('moveCard reorders within the same column', async () => {
+    const { result } = renderHook(() => useBoard())
+    await act(() => result.current.reload())
+    await act(() => result.current.moveCard('col1', 'col1', 'card1', 1))
+    const col1 = result.current.columns.find(c => c.id === 'col1')!
+    expect(col1.cards[1].id).toBe('card1')
+    expect(col1.cards[0].id).toBe('card2')
+  })
+
+  it('renameColumn updates the column title in state', async () => {
+    const { result } = renderHook(() => useBoard())
+    await act(() => result.current.reload())
+    await act(() => result.current.renameColumn('col1', 'Renamed'))
+    expect(result.current.columns[0].title).toBe('Renamed')
   })
 })

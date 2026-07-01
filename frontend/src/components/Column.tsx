@@ -10,10 +10,11 @@ type Props = {
   column: ColumnType
   onAddCard: (columnId: string, title: string, details: string) => void
   onDeleteCard: (columnId: string, cardId: string) => void
+  onEditCard: (cardId: string, title: string, details: string) => Promise<void>
   onRenameColumn: (columnId: string, title: string) => void
 }
 
-export function Column({ column, onAddCard, onDeleteCard, onRenameColumn }: Props) {
+export function Column({ column, onAddCard, onDeleteCard, onEditCard, onRenameColumn }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [titleValue, setTitleValue] = useState(column.title)
   const [isAddingCard, setIsAddingCard] = useState(false)
@@ -72,6 +73,7 @@ export function Column({ column, onAddCard, onDeleteCard, onRenameColumn }: Prop
               card={card}
               columnId={column.id}
               onDelete={onDeleteCard}
+              onEdit={onEditCard}
             />
           ))}
         </SortableContext>

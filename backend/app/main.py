@@ -1,12 +1,23 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.auth import router as auth_router
+from app.board import router as board_router
+from app.db import init_db
 
-app = FastAPI(title="Project Management API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Project Management API", lifespan=lifespan)
 app.include_router(auth_router)
+app.include_router(board_router)
 
 
 @app.get("/api/health")

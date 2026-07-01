@@ -117,10 +117,10 @@ Success criteria:
 and cards. Get explicit user sign-off before any backend DB code is written.
 
 Checklist:
-- [ ] Propose tables/columns/types/foreign keys/indices covering: `users`, `boards` (one per user for MVP), `columns`, `cards`
-- [ ] Save the schema as `docs/db-schema.json`
-- [ ] Write `docs/DATABASE.md`: SQLite file location, "create DB on first run if missing" strategy, rationale for the design
-- [ ] Present the schema to the user and get explicit approval
+- [x] Propose tables/columns/types/foreign keys/indices covering: `users`, `boards` (one per user for MVP), `columns`, `cards`
+- [x] Save the schema as `docs/db-schema.json`
+- [x] Write `docs/DATABASE.md`: SQLite file location, "create DB on first run if missing" strategy, rationale for the design
+- [x] Present the schema to the user and get explicit approval
 
 Tests: validate `docs/db-schema.json` is well-formed JSON (e.g. `python -c "import json; json.load(open('docs/db-schema.json'))"`).
 
@@ -137,15 +137,15 @@ backed by the SQLite schema from Part 5. DB is created automatically if
 missing. Thorough backend unit tests.
 
 Checklist:
-- [ ] DB layer creates tables on startup from the Part 5 schema if the SQLite file doesn't exist
-- [ ] Seed a default board (matching the current demo columns/cards) for the hardcoded user on first run
-- [ ] `GET /api/board`: returns the current user's board as JSON
-- [ ] `POST /api/board/cards`: create a card
-- [ ] `PATCH /api/board/cards/{id}`: edit a card's title/details, or move it (column + position)
-- [ ] `DELETE /api/board/cards/{id}`: delete a card
-- [ ] `PATCH /api/board/columns/{id}`: rename a column
-- [ ] All board routes require a valid session (Part 4)
-- [ ] `backend/AGENTS.md` documents each route
+- [x] DB layer creates tables on startup from the Part 5 schema if the SQLite file doesn't exist
+- [x] Seed a default board (matching the current demo columns/cards) for the hardcoded user on first run
+- [x] `GET /api/board`: returns the current user's board as JSON
+- [x] `POST /api/board/cards`: create a card
+- [x] `PATCH /api/board/cards/{id}`: edit a card's title/details, or move it (column + position)
+- [x] `DELETE /api/board/cards/{id}`: delete a card
+- [x] `PATCH /api/board/columns/{id}`: rename a column
+- [x] All board routes require a valid session (Part 4)
+- [x] `backend/AGENTS.md` documents each route
 
 Tests:
 - pytest per route: success case, not-found case (bad card/column id -> 404), unauthenticated case (-> 401)
@@ -165,12 +165,12 @@ Success criteria:
 the board persists. Test thoroughly.
 
 Checklist:
-- [ ] Replace `frontend/src/lib/store.ts`'s in-memory reducer with API-backed hooks: fetch `GET /api/board` on load, call the Part 6 endpoints on add/move/edit/delete/rename
-- [ ] Add inline card editing UI to `Card` component: click to edit title/details in-place, save on blur/Enter, cancel on Escape — calls `PATCH /api/board/cards/{id}` (required by AGENTS.md: "cards can be moved with drag and drop, and edited")
-- [ ] Add loading and error states to `Board`
-- [ ] Retire `frontend/src/lib/data.ts` demo seed data (no longer needed once the backend seeds it)
-- [ ] Update unit tests to mock the fetch/API layer; keep any pure-logic tests that still apply
-- [ ] Extend Playwright e2e to run against the full dockerized stack: log in, add/move/edit/delete a card, reload the page, confirm the change persisted
+- [x] Replace `frontend/src/lib/store.ts`'s in-memory reducer with API-backed hooks: fetch `GET /api/board` on load, call the Part 6 endpoints on add/move/edit/delete/rename
+- [x] Add inline card editing UI to `Card` component: click to edit title/details in-place, save on blur/Enter, cancel on Escape — calls `PATCH /api/board/cards/{id}` (required by AGENTS.md: "cards can be moved with drag and drop, and edited")
+- [x] Add loading and error states to `Board`
+- [x] Retire `frontend/src/lib/data.ts` demo seed data (no longer needed once the backend seeds it)
+- [x] Update unit tests to mock the fetch/API layer; keep any pure-logic tests that still apply
+- [x] Extend Playwright e2e to run against the full dockerized stack: log in, add/move/edit/delete a card, reload the page, confirm the change persisted
 
 Tests:
 - vitest: API hook layer with mocked fetch, success and error responses; Card edit mode (open, save, cancel)

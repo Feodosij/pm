@@ -19,6 +19,7 @@ function renderColumn(props: Partial<Parameters<typeof Column>[0]> = {}) {
         column={col}
         onAddCard={vi.fn()}
         onDeleteCard={vi.fn()}
+        onEditCard={vi.fn().mockResolvedValue(undefined)}
         onRenameColumn={vi.fn()}
         {...props}
       />

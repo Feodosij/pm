@@ -1,85 +1,110 @@
-import { useReducer } from 'react'
-import { initialBoard } from './data'
+import { useState, useCallback } from 'react'
 import type { BoardState } from './types'
+import {
+  fetchBoard,
+  apiCreateCard,
+  apiEditCard,
+  apiMoveCard,
+  apiDeleteCard,
+  apiRenameColumn,
+} from './api'
 
-type Action =
-  | { type: 'ADD_CARD'; columnId: string; title: string; details: string }
-  | { type: 'DELETE_CARD'; columnId: string; cardId: string }
-  | { type: 'MOVE_CARD'; sourceColumnId: string; destColumnId: string; cardId: string; destIndex: number }
-  | { type: 'RENAME_COLUMN'; columnId: string; title: string }
-
-export function boardReducer(state: BoardState, action: Action): BoardState {
-  switch (action.type) {
-    case 'ADD_CARD':
-      return {
-        columns: state.columns.map(col =>
-          col.id === action.columnId
-            ? {
-                ...col,
-                cards: [
-                  ...col.cards,
-                  { id: crypto.randomUUID(), title: action.title, details: action.details },
-                ],
-              }
-            : col
-        ),
-      }
-
-    case 'DELETE_CARD':
-      return {
-        columns: state.columns.map(col =>
-          col.id === action.columnId
-            ? { ...col, cards: col.cards.filter(c => c.id !== action.cardId) }
-            : col
-        ),
-      }
-
-    case 'MOVE_CARD': {
-      const sourceCol = state.columns.find(c => c.id === action.sourceColumnId)!
-      const card = sourceCol.cards.find(c => c.id === action.cardId)!
-      return {
-        columns: state.columns.map(col => {
-          if (col.id === action.sourceColumnId && col.id === action.destColumnId) {
-            const cards = col.cards.filter(c => c.id !== action.cardId)
-            cards.splice(action.destIndex, 0, card)
-            return { ...col, cards }
-          }
-          if (col.id === action.sourceColumnId) {
-            return { ...col, cards: col.cards.filter(c => c.id !== action.cardId) }
-          }
-          if (col.id === action.destColumnId) {
-            const cards = [...col.cards]
-            cards.splice(action.destIndex, 0, card)
-            return { ...col, cards }
-          }
-          return col
-        }),
-      }
-    }
-
-    case 'RENAME_COLUMN':
-      return {
-        columns: state.columns.map(col =>
-          col.id === action.columnId ? { ...col, title: action.title } : col
-        ),
-      }
-
-    default:
-      return state
-  }
+export type BoardHook = {
+  columns: BoardState['columns']
+  loading: boolean
+  error: string | null
+  reload: () => Promise<void>
+  addCard: (columnId: string, title: string, details: string) => Promise<void>
+  editCard: (cardId: string, title: string, details: string) => Promise<void>
+  deleteCard: (columnId: string, cardId: string) => Promise<void>
+  moveCard: (sourceColumnId: string, destColumnId: string, cardId: string, destIndex: number) => Promise<void>
+  renameColumn: (columnId: string, title: string) => Promise<void>
 }
 
-export function useBoard() {
-  const [state, dispatch] = useReducer(boardReducer, initialBoard)
-  return {
-    columns: state.columns,
-    addCard: (columnId: string, title: string, details: string) =>
-      dispatch({ type: 'ADD_CARD', columnId, title, details }),
-    deleteCard: (columnId: string, cardId: string) =>
-      dispatch({ type: 'DELETE_CARD', columnId, cardId }),
-    moveCard: (sourceColumnId: string, destColumnId: string, cardId: string, destIndex: number) =>
-      dispatch({ type: 'MOVE_CARD', sourceColumnId, destColumnId, cardId, destIndex }),
-    renameColumn: (columnId: string, title: string) =>
-      dispatch({ type: 'RENAME_COLUMN', columnId, title }),
-  }
+export function useBoard(): BoardHook {
+  const [state, setState] = useState<BoardState>({ columns: [] })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const board = await fetchBoard()
+      setState(board)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load board')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const addCard = useCallback(async (columnId: string, title: string, details: string) => {
+    const card = await apiCreateCard(columnId, title, details)
+    setState(prev => ({
+      columns: prev.columns.map(col =>
+        col.id === columnId ? { ...col, cards: [...col.cards, card] } : col
+      ),
+    }))
+  }, [])
+
+  const editCard = useCallback(async (cardId: string, title: string, details: string) => {
+    const updated = await apiEditCard(cardId, title, details)
+    setState(prev => ({
+      columns: prev.columns.map(col => ({
+        ...col,
+        cards: col.cards.map(c => (c.id === cardId ? updated : c)),
+      })),
+    }))
+  }, [])
+
+  const deleteCard = useCallback(async (_columnId: string, cardId: string) => {
+    await apiDeleteCard(cardId)
+    setState(prev => ({
+      columns: prev.columns.map(col => ({
+        ...col,
+        cards: col.cards.filter(c => c.id !== cardId),
+      })),
+    }))
+  }, [])
+
+  const moveCard = useCallback(
+    async (sourceColumnId: string, destColumnId: string, cardId: string, destIndex: number) => {
+      await apiMoveCard(cardId, destColumnId, destIndex)
+      setState(prev => {
+        const sourceCol = prev.columns.find(c => c.id === sourceColumnId)!
+        const card = sourceCol.cards.find(c => c.id === cardId)!
+        return {
+          columns: prev.columns.map(col => {
+            if (col.id === sourceColumnId && col.id === destColumnId) {
+              const cards = col.cards.filter(c => c.id !== cardId)
+              cards.splice(destIndex, 0, card)
+              return { ...col, cards }
+            }
+            if (col.id === sourceColumnId) {
+              return { ...col, cards: col.cards.filter(c => c.id !== cardId) }
+            }
+            if (col.id === destColumnId) {
+              const cards = [...col.cards]
+              cards.splice(destIndex, 0, card)
+              return { ...col, cards }
+            }
+            return col
+          }),
+        }
+      })
+    },
+    []
+  )
+
+  const renameColumn = useCallback(async (columnId: string, title: string) => {
+    await apiRenameColumn(columnId, title)
+    setState(prev => ({
+      columns: prev.columns.map(col =>
+        col.id === columnId ? { ...col, title } : col
+      ),
+    }))
+  }, [])
+
+  return { columns: state.columns, loading, error, reload, addCard, editCard, deleteCard, moveCard, renameColumn }
 }

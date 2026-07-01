@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   DndContext,
   DragEndEvent,
@@ -16,8 +16,12 @@ import { findCardById, resolveDragMove } from '@/lib/dnd'
 import type { Card as CardType } from '@/lib/types'
 
 export function Board() {
-  const { columns, addCard, deleteCard, moveCard, renameColumn } = useBoard()
+  const { columns, loading, error, reload, addCard, editCard, deleteCard, moveCard, renameColumn } = useBoard()
   const [activeCard, setActiveCard] = useState<CardType | null>(null)
+
+  useEffect(() => {
+    reload()
+  }, [reload])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -37,6 +41,28 @@ export function Board() {
     moveCard(result.sourceColumnId, result.destColumnId, active.id as string, result.destIndex)
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
+        <p className="text-white/40 text-sm">Loading board…</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-64px)] gap-3">
+        <p className="text-red-400 text-sm">{error}</p>
+        <button
+          onClick={reload}
+          className="text-xs text-[#209dd7] hover:underline"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+
   return (
     <DndContext
       sensors={sensors}
@@ -51,6 +77,7 @@ export function Board() {
             column={column}
             onAddCard={addCard}
             onDeleteCard={deleteCard}
+            onEditCard={editCard}
             onRenameColumn={renameColumn}
           />
         ))}

@@ -1,11 +1,113 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
-// Simulate being authenticated so the board is visible without a running backend
-async function mockAuthenticated(page: Parameters<typeof test>[1] extends (args: infer A) => unknown ? A extends { page: infer P } ? P : never : never) {
-  await page.route('/api/me', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authenticated: true, username: 'user' }) })
-  )
+// Demo board matching the seed data
+const seedBoard = {
+  id: '1',
+  title: 'My Board',
+  columns: [
+    {
+      id: '1',
+      title: 'Backlog',
+      cards: [
+        { id: '1', title: 'Research competitors',  details: 'Analyze top 5 competitors and document their key features.' },
+        { id: '2', title: 'Define MVP scope',      details: 'Work with stakeholders to finalize the feature set for v1.' },
+        { id: '3', title: 'Design system audit',   details: 'Review existing design tokens and identify inconsistencies.' },
+      ],
+    },
+    {
+      id: '2',
+      title: 'To Do',
+      cards: [
+        { id: '4', title: 'Set up CI/CD pipeline',   details: 'Configure GitHub Actions for automated testing and deployment.' },
+        { id: '5', title: 'Write API documentation',  details: 'Document all REST endpoints using OpenAPI 3.0 spec.' },
+      ],
+    },
+    { id: '3', title: 'In Progress', cards: [
+      { id: '6', title: 'Implement auth flow',    details: 'Build login, register, and password reset screens.' },
+      { id: '7', title: 'Database schema design', details: 'Finalize ERD and write migration scripts.' },
+    ]},
+    { id: '4', title: 'Review', cards: [
+      { id: '8', title: 'Landing page redesign', details: 'New hero section with improved conversion copy.' },
+    ]},
+    { id: '5', title: 'Done', cards: [
+      { id: '9',  title: 'Project kickoff',   details: 'Initial team alignment meeting completed.' },
+      { id: '10', title: 'Tech stack decision', details: 'Agreed on Next.js, TypeScript, and Tailwind CSS.' },
+    ]},
+  ],
 }
+
+type BoardData = typeof seedBoard
+
+/** Set up all API mocks with a stateful in-memory board so mutations persist within a test. */
+async function setupMocks(page: Page, authenticated = true) {
+  let board: BoardData = JSON.parse(JSON.stringify(seedBoard))
+  let nextId = 100
+
+  await page.route('/api/me', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authenticated, username: 'user' }) })
+  )
+
+  await page.route('/api/board', route => {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(board) })
+  })
+
+  await page.route('/api/board/cards', async route => {
+    const body = route.request().postDataJSON()
+    const col = board.columns.find(c => c.id === body.column_id)
+    if (!col) { route.fulfill({ status: 404 }); return }
+    const card = { id: String(nextId++), title: body.title, details: body.details ?? '' }
+    col.cards.push(card)
+    route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(card) })
+  })
+
+  await page.route('/api/board/cards/**', async route => {
+    const method = route.request().method()
+    const url = route.request().url()
+    const cardId = url.split('/').pop()!
+
+    if (method === 'DELETE') {
+      for (const col of board.columns) {
+        const idx = col.cards.findIndex(c => c.id === cardId)
+        if (idx !== -1) { col.cards.splice(idx, 1); break }
+      }
+      route.fulfill({ status: 204 })
+      return
+    }
+
+    if (method === 'PATCH') {
+      const body = route.request().postDataJSON()
+      for (const col of board.columns) {
+        const card = col.cards.find(c => c.id === cardId)
+        if (card) {
+          if (body.title !== undefined) card.title = body.title
+          if (body.details !== undefined) card.details = body.details
+          if (body.column_id !== undefined && body.position !== undefined) {
+            col.cards = col.cards.filter(c => c.id !== cardId)
+            const destCol = board.columns.find(c => c.id === body.column_id)!
+            destCol.cards.splice(body.position, 0, card)
+          }
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(card) })
+          return
+        }
+      }
+      route.fulfill({ status: 404 }); return
+    }
+  })
+
+  await page.route('/api/board/columns/**', async route => {
+    const url = route.request().url()
+    const colId = url.split('/').pop()!
+    const body = route.request().postDataJSON()
+    const col = board.columns.find(c => c.id === colId)
+    if (!col) { route.fulfill({ status: 404 }); return }
+    col.title = body.title
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(col) })
+  })
+
+  return { getBoard: () => board }
+}
+
+// ── Authentication ─────────────────────────────────────────────────────────────
 
 test.describe('Authentication', () => {
   test('shows the login screen when unauthenticated', async ({ page }) => {
@@ -34,6 +136,9 @@ test.describe('Authentication', () => {
         await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'Invalid credentials' }) })
       }
     })
+    await page.route('/api/board', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(seedBoard) })
+    )
     await page.goto('/')
     await page.getByPlaceholder('Username').fill('user')
     await page.getByPlaceholder('Password').fill('password')
@@ -64,6 +169,9 @@ test.describe('Authentication', () => {
         body: JSON.stringify(authenticated ? { authenticated: true, username: 'user' } : { authenticated: false }),
       })
     )
+    await page.route('/api/board', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(seedBoard) })
+    )
     await page.route('/api/logout', async route => {
       authenticated = false
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) })
@@ -75,14 +183,16 @@ test.describe('Authentication', () => {
   })
 })
 
+// ── Kanban Board ───────────────────────────────────────────────────────────────
+
 test.describe('Kanban Board', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuthenticated(page)
+    await setupMocks(page)
     await page.goto('/')
     await page.waitForSelector('[data-testid="column"]')
   })
 
-  test('renders 5 columns with dummy data', async ({ page }) => {
+  test('renders 5 columns with seeded data', async ({ page }) => {
     const columns = page.locator('[data-testid="column"]')
     await expect(columns).toHaveCount(5)
     await expect(columns.nth(0).getByRole('button', { name: 'Backlog', exact: true })).toBeVisible()
@@ -92,7 +202,7 @@ test.describe('Kanban Board', () => {
     await expect(columns.nth(4).getByRole('button', { name: 'Done', exact: true })).toBeVisible()
   })
 
-  test('renders dummy cards on load', async ({ page }) => {
+  test('renders seeded cards on load', async ({ page }) => {
     await expect(page.locator('text=Research competitors')).toBeVisible()
     await expect(page.locator('text=Project kickoff')).toBeVisible()
   })
@@ -140,6 +250,29 @@ test.describe('Kanban Board', () => {
     await card.hover()
     await card.getByRole('button', { name: /delete card/i }).click({ force: true })
     await expect(page.locator('text=Research competitors')).not.toBeVisible()
+  })
+
+  test('can edit a card inline', async ({ page }) => {
+    const card = page.locator('[data-testid="card"]').first()
+    await card.hover()
+    await card.getByRole('button', { name: /edit card/i }).click({ force: true })
+    const titleInput = page.getByTestId('card-title-input')
+    await titleInput.fill('Updated task title')
+    await titleInput.press('Enter')
+    await expect(page.locator('text=Updated task title')).toBeVisible()
+  })
+
+  test('add a card, then reload — change persists via mock state', async ({ page }) => {
+    // Add a card
+    await page.locator('[data-testid="column"]').first().getByRole('button', { name: /add card/i }).click()
+    await page.locator('input[placeholder="Card title"]').fill('Persisted card')
+    await page.getByRole('button', { name: 'Add Card', exact: true }).click()
+    await expect(page.locator('text=Persisted card')).toBeVisible()
+
+    // Reload — the stateful mock returns the updated board
+    await page.reload()
+    await page.waitForSelector('[data-testid="column"]')
+    await expect(page.locator('text=Persisted card')).toBeVisible()
   })
 
   test('can drag a card to another column', async ({ page }) => {
