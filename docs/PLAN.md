@@ -234,11 +234,11 @@ Implementation notes:
 "2+2" sanity check.
 
 Checklist:
-- [ ] OpenRouter client config in the backend: API key from `.env` (`OPENROUTER_API_KEY`), base URL `https://openrouter.ai/api/v1`
-- [ ] Pick and document the free model to use, replacing the `some free` placeholder in `AGENTS.md`
-- [ ] `backend/app/ai.py` (or similar): function to call the chat completions endpoint
-- [ ] Diagnostic test asking "What is 2+2?" and asserting the reply contains "4"
-- [ ] Clean error handling for auth failures/timeouts from OpenRouter
+- [x] OpenRouter client config in the backend: API key from `.env` (`OPENROUTER_API_KEY`), base URL `https://openrouter.ai/api/v1`
+- [x] Pick and document the free model to use, replacing the `some free` placeholder in `AGENTS.md`
+- [x] `backend/app/ai.py` (or similar): function to call the chat completions endpoint
+- [x] Diagnostic test asking "What is 2+2?" and asserting the reply contains "4"
+- [x] Clean error handling for auth failures/timeouts from OpenRouter
 
 Tests:
 - pytest with the OpenRouter HTTP call mocked, so the suite stays network-free in CI
@@ -248,6 +248,12 @@ Success criteria:
 - A live call to OpenRouter answers "What is 2+2?" correctly, confirming the API key and model work end-to-end
 - The mocked unit test passes without network access
 - The chosen model is documented in `AGENTS.md`
+
+Implementation notes:
+- Model chosen: `nvidia/nemotron-3-super-120b-a12b:free` (selected after live testing several free models on OpenRouter; Meta Llama and Google Gemma free tiers were rate-limited at time of implementation)
+- `backend/app/ai.py`: `load_dotenv(find_dotenv())` at module level so `.env` is loaded in both server and test contexts; `_make_client()` creates an `openai.AsyncOpenAI` with OpenRouter base URL; `chat_completion(messages)` handles `AuthenticationError`, `APITimeoutError`, `APIConnectionError`, `RateLimitError` as `RuntimeError`
+- Dependencies added: `openai>=1.0.0`, `python-dotenv>=1.0.0` to main; `pytest-asyncio>=0.23.0` to dev; `asyncio_mode = "auto"` in pytest config
+- Results: 31 unit tests pass, 1 live test skipped by default, 96% coverage
 
 ---
 
