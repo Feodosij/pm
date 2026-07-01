@@ -128,6 +128,13 @@ Success criteria:
 - `docs/db-schema.json` and `docs/DATABASE.md` exist and are internally consistent
 - User has explicitly approved the schema before Part 6 starts
 
+Implementation notes:
+- All tables use `INTEGER PRIMARY KEY` (SQLite autoincrement). The API serializes IDs as
+  strings (e.g. `"1"`) so the frontend `id: string` type requires no changes.
+- `position INTEGER NOT NULL` on both `columns` and `cards` — 0-based, sequential,
+  updated on every move. Simple enough for MVP card counts; no gap/fractional scheme needed.
+- All foreign keys cascade on delete; WAL journal mode enabled for concurrent reads.
+
 ---
 
 ## Part 6: Backend (DB-backed API)
@@ -157,6 +164,21 @@ Success criteria:
 - All CRUD routes work and are covered by passing tests at >=80% coverage
 - Manual check: add a card, restart the container, the card is still there
 
+Implementation notes:
+- `backend/app/db.py`: `get_connection(db_path?)` is a context manager that opens the
+  SQLite file, enables WAL + FK enforcement, and auto-commits or rolls back on exception.
+  DB path defaults to `/data/pm.db` (Docker volume); override with the `DB_PATH` env var
+  for local dev (`DB_PATH=./dev.db uv run uvicorn ...`).
+- Startup wired via FastAPI `lifespan` (`@asynccontextmanager`) — not the deprecated
+  `@app.on_event("startup")`.
+- `backend/tests/conftest.py`: autouse `tmp_db` fixture patches `db._DB_PATH` to a fresh
+  temp file via `monkeypatch` before every test, so tests are fully isolated and never
+  touch `/data/pm.db`.
+- Move logic in `PATCH /api/board/cards/{id}`: within-column reorders shift surrounding
+  cards by ±1 in-place; cross-column moves close the gap in the source column and open a
+  slot in the destination column, then update the card's `column_id` and `position`.
+- Results: 27 tests, 97% coverage.
+
 ---
 
 ## Part 7: Frontend + Backend integration
@@ -181,6 +203,28 @@ Success criteria:
 - Board actions persist to SQLite and survive a page reload and a container restart
 - All unit + e2e tests pass at >=80% coverage
 - No production code path still uses the static in-memory demo data
+
+Implementation notes:
+- `useBoard` hook (`store.ts`): `useReducer` replaced with `useState` + async action
+  functions. Public interface: `{ columns, loading, error, reload, addCard, editCard,
+  deleteCard, moveCard, renameColumn }`. All mutation methods return `Promise<void>`.
+  Mutations optimistically update local state after the API call succeeds — no full
+  refetch on every action.
+- `Board` calls `reload()` in a `useEffect` on mount to fetch the initial board state.
+- `Card` component: hover reveals an edit (pencil) button alongside the existing delete
+  button. Clicking it enters an inline editing mode with a title `<input>` and details
+  `<textarea>`. Enter on the title field or blur on the textarea commits; Escape cancels.
+  An empty trimmed title also cancels without saving.
+- `Column` now requires and forwards an `onEditCard` prop to `Card`.
+- Board API functions split into `frontend/src/lib/api.ts`:
+  `fetchBoard`, `apiCreateCard`, `apiEditCard`, `apiMoveCard`, `apiDeleteCard`,
+  `apiRenameColumn` — all use relative URLs and `credentials: 'include'`.
+- Playwright e2e: tests run against `next dev` with Playwright route mocks that maintain
+  stateful in-memory board data across requests (including page reloads), simulating
+  persistence without requiring Docker. True container-restart persistence remains a
+  manual verification step.
+- Results: 64 unit tests, 93% coverage; Playwright suite updated with add/delete/edit/
+  rename/drag and a reload-and-verify-persistence test.
 
 ---
 
