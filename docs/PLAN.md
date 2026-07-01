@@ -166,14 +166,15 @@ the board persists. Test thoroughly.
 
 Checklist:
 - [ ] Replace `frontend/src/lib/store.ts`'s in-memory reducer with API-backed hooks: fetch `GET /api/board` on load, call the Part 6 endpoints on add/move/edit/delete/rename
+- [ ] Add inline card editing UI to `Card` component: click to edit title/details in-place, save on blur/Enter, cancel on Escape — calls `PATCH /api/board/cards/{id}` (required by AGENTS.md: "cards can be moved with drag and drop, and edited")
 - [ ] Add loading and error states to `Board`
 - [ ] Retire `frontend/src/lib/data.ts` demo seed data (no longer needed once the backend seeds it)
 - [ ] Update unit tests to mock the fetch/API layer; keep any pure-logic tests that still apply
-- [ ] Extend Playwright e2e to run against the full dockerized stack: log in, add/move/delete a card, reload the page, confirm the change persisted
+- [ ] Extend Playwright e2e to run against the full dockerized stack: log in, add/move/edit/delete a card, reload the page, confirm the change persisted
 
 Tests:
-- vitest: API hook layer with mocked fetch, success and error responses
-- Playwright e2e against the running container, including a reload-and-verify-persistence step
+- vitest: API hook layer with mocked fetch, success and error responses; Card edit mode (open, save, cancel)
+- Playwright e2e against the running container, including a reload-and-verify-persistence step for card edits
 - Coverage >=80%
 
 Success criteria:
