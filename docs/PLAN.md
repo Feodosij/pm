@@ -64,12 +64,12 @@ at `/`, so the existing demo Kanban board is reachable through the backend
 container. Comprehensive unit and integration tests.
 
 Checklist:
-- [ ] `frontend/next.config.ts`: set `output: 'export'`
-- [ ] Multi-stage `backend/Dockerfile`: node stage runs `npm run build` (static export), python stage copies the exported `out/` into the image
-- [ ] `backend/app/main.py`: mount the exported static directory at `/` via `StaticFiles`
-- [ ] Confirm no server-only Next.js features are relied on (e.g. `next/image` optimization, server actions) since this is a static export
-- [ ] Verify existing frontend unit tests (`__tests__/`) still pass and cover the components at >=80%
-- [ ] Verify/extend the Playwright e2e suite (`playwright/kanban.spec.ts`) to run against the production build, not just `next dev`
+- [x] `frontend/next.config.ts`: set `output: 'export'`
+- [x] Multi-stage `backend/Dockerfile`: node stage runs `npm run build` (static export), python stage copies the exported `out/` into the image
+- [x] `backend/app/main.py`: mount the exported static directory at `/` via `StaticFiles`
+- [x] Confirm no server-only Next.js features are relied on (e.g. `next/image` optimization, server actions) since this is a static export
+- [x] Verify existing frontend unit tests (`__tests__/`) still pass and cover the components at >=80%
+- [x] Verify/extend the Playwright e2e suite (`playwright/kanban.spec.ts`) to run against the production build, not just `next dev`
 
 Tests:
 - `npm run test` (vitest, with coverage) for `Board`, `Column`, `Card`, `AddCardForm`, `store`
@@ -89,14 +89,14 @@ Success criteria:
 board is visible, with a working logout.
 
 Checklist:
-- [ ] `POST /api/login`: validates `{username, password}` against the hardcoded credentials; on success sets an httpOnly session cookie
-- [ ] `POST /api/logout`: clears the session cookie
-- [ ] `GET /api/me`: returns current auth state (used by the frontend to decide whether to show login or board)
-- [ ] FastAPI dependency that protects board/chat routes (added in later parts) and returns 401 when unauthenticated
-- [ ] Frontend `Login` component/page: username/password form, calls `/api/login`, shows an error on bad credentials
-- [ ] Frontend: on load, call `/api/me`; show `Login` if unauthenticated, otherwise show the board
-- [ ] Frontend: logout control that calls `/api/logout` and returns to the login screen
-- [ ] `frontend/AGENTS.md` and `backend/AGENTS.md` updated with the auth flow
+- [x] `POST /api/login`: validates `{username, password}` against the hardcoded credentials; on success sets an httpOnly session cookie
+- [x] `POST /api/logout`: clears the session cookie
+- [x] `GET /api/me`: returns current auth state (used by the frontend to decide whether to show login or board)
+- [x] FastAPI dependency that protects board/chat routes (added in later parts) and returns 401 when unauthenticated
+- [x] Frontend `Login` component/page: username/password form, calls `/api/login`, shows an error on bad credentials
+- [x] Frontend: on load, call `/api/me`; show `Login` if unauthenticated, otherwise show the board
+- [x] Frontend: logout control that calls `/api/logout` and returns to the login screen
+- [x] `frontend/AGENTS.md` and `backend/AGENTS.md` updated with the auth flow
 
 Tests:
 - Backend pytest: `/api/login` success and failure (wrong username/password), `/api/logout`, a protected route returns 401 without a session and 200 with one
