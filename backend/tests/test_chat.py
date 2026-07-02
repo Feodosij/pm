@@ -88,3 +88,73 @@ def test_chat_unknown_card_id(authed_client, caplog):
     board = authed_client.get("/api/board").json()
     total = sum(len(col["cards"]) for col in board["columns"])
     assert total == 10  # seeded board has 10 cards total (3+2+2+1+2)
+
+
+def _get_board(authed_client):
+    return authed_client.get("/api/board").json()
+
+
+def test_chat_valid_create(authed_client):
+    board = _get_board(authed_client)
+    col_id = board["columns"][0]["id"]  # Backlog
+    payload = json.dumps({
+        "reply": "Created a card.",
+        "board_update": [{"operation": "create", "title": "AI card", "column_id": col_id}],
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "add a card", "history": []})
+    assert res.status_code == 200
+    assert res.json()["board_update"] is not None
+    board2 = _get_board(authed_client)
+    titles = [c["title"] for c in board2["columns"][0]["cards"]]
+    assert "AI card" in titles
+
+
+def test_chat_valid_edit(authed_client):
+    board = _get_board(authed_client)
+    card = board["columns"][0]["cards"][0]  # "Research competitors"
+    payload = json.dumps({
+        "reply": "Renamed the card.",
+        "board_update": [{"operation": "edit", "card_id": card["id"], "title": "Renamed by AI"}],
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "rename first card", "history": []})
+    assert res.status_code == 200
+    assert res.json()["board_update"] is not None
+    board2 = _get_board(authed_client)
+    titles = [c["title"] for c in board2["columns"][0]["cards"]]
+    assert "Renamed by AI" in titles
+    assert "Research competitors" not in titles
+
+
+def test_chat_valid_move(authed_client):
+    board = _get_board(authed_client)
+    card = board["columns"][0]["cards"][0]  # first card in Backlog
+    done_col = next(col for col in board["columns"] if col["title"] == "Done")
+    payload = json.dumps({
+        "reply": "Moved to Done.",
+        "board_update": [{"operation": "move", "card_id": card["id"], "column_id": done_col["id"]}],
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "move to done", "history": []})
+    assert res.status_code == 200
+    assert res.json()["board_update"] is not None
+    board2 = _get_board(authed_client)
+    done_cards = next(col for col in board2["columns"] if col["title"] == "Done")["cards"]
+    assert any(c["id"] == card["id"] for c in done_cards)
+
+
+def test_chat_valid_delete(authed_client):
+    board = _get_board(authed_client)
+    card = board["columns"][0]["cards"][0]
+    payload = json.dumps({
+        "reply": "Deleted the card.",
+        "board_update": [{"operation": "delete", "card_id": card["id"]}],
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "delete first card", "history": []})
+    assert res.status_code == 200
+    assert res.json()["board_update"] is not None
+    board2 = _get_board(authed_client)
+    all_ids = [c["id"] for col in board2["columns"] for c in col["cards"]]
+    assert card["id"] not in all_ids
