@@ -54,3 +54,17 @@ def test_chat_malformed_json(authed_client, caplog):
     assert data["reply"] == "not json at all"
     assert data["board_update"] is None
     assert any("not valid JSON" in r.message for r in caplog.records)
+
+
+def test_chat_invalid_schema(authed_client, caplog):
+    import logging
+    # create operation without required title — passes JSON parse but fails @model_validator
+    bad_payload = json.dumps({"reply": "ok", "board_update": [{"operation": "create", "column_id": "1"}]})
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=bad_payload)):
+        with caplog.at_level(logging.WARNING, logger="app.chat"):
+            res = authed_client.post("/api/chat", json={"message": "hi", "history": []})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["reply"] == "ok"
+    assert data["board_update"] is None
+    assert any("schema validation" in r.message for r in caplog.records)
