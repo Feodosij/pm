@@ -264,19 +264,24 @@ user's question and conversation history, and respond with Structured
 Outputs containing a reply and an optional board update.
 
 Checklist:
-- [ ] Pydantic response schema, e.g. `AIResponse{ reply: str, board_update: Optional[BoardUpdate] }`
-- [ ] Build the request: serialized current board JSON + user message + prior turns
-- [ ] Use OpenRouter Structured Outputs (JSON-schema `response_format`) to constrain the model's output to that schema
-- [ ] `POST /api/chat`: accepts `{message, history}`, returns `{reply, board_update}`; if `board_update` is present, apply it via the Part 6 CRUD logic before responding
-- [ ] Validate any AI-proposed update (referenced column/card ids must exist) before applying; reject invalid updates without touching the DB
+- [x] Pydantic response schema, e.g. `AIResponse{ reply: str, board_update: Optional[BoardUpdate] }`
+- [x] Build the request: serialized current board JSON + user message + prior turns
+- [x] Use prompt-based JSON (system prompt instructs model to return `{reply, board_update}`); Pydantic validates structure
+- [x] `POST /api/chat`: accepts `{message, history}`, returns `{reply, board_update}`; if `board_update` is present, apply it via the Part 6 CRUD logic before responding
+- [x] Validate any AI-proposed update (referenced column/card ids must exist) before applying; reject invalid updates without touching the DB
 
 Tests:
-- pytest with mocked OpenRouter responses: (a) reply-only, (b) reply + valid update applied correctly, (c) reply + invalid update rejected, DB unchanged
-- Coverage >=80%
+- [x] pytest with mocked OpenRouter responses: (a) reply-only, (b) reply + valid update applied correctly, (c) reply + invalid update rejected, DB unchanged
+- [x] Coverage >=80% (achieved 89% for app/chat.py)
 
 Success criteria:
-- A request like "Move 'Research competitors' to Done" returns a reply and the DB reflects the change
-- Malformed/invalid AI output never corrupts the stored board (covered by a test)
+- [x] A request like "Move 'Research competitors' to Done" returns a reply and the DB reflects the change
+- [x] Malformed/invalid AI output never corrupts the stored board (covered by a test)
+
+Implementation notes:
+- `backend/app/chat.py` — `POST /api/chat` route with `ChatRequest`/`ChatResponse` schemas, system prompt builder, referential validator, and `_apply_operation` for all four operation types (create/edit/move/delete)
+- All-or-nothing batch: if any operation references unknown IDs, the entire batch is rejected
+- 12 tests in `backend/tests/test_chat.py` covering auth, JSON parse errors, schema errors, referential errors, all four CRUD ops, multi-op batch (valid and partially invalid)
 
 ---
 

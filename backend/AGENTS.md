@@ -16,6 +16,12 @@ auth, the Kanban board API, and (in Part 8+) AI chat.
   - `init_db(db_path?)` — creates all tables and seeds the hardcoded user + default board if missing.
   - `get_connection(db_path?)` — context manager that yields a `sqlite3.Connection` with WAL mode and FK enforcement; auto-commits or rolls back.
   - DB path: `/data/pm.db` (env var `DB_PATH` overrides). Tests override via `monkeypatch`.
+- `app/chat.py` — AI chat route and supporting logic:
+  - `POST /api/chat` — body: `{message: str, history: [{role, content}]}`. Loads current board, builds a system prompt (board JSON + instructions), calls OpenRouter, parses `{reply, board_update}` from the response. `board_update` is a list of card operations (create/edit/move/delete). All operations are validated referentially (card_id and column_id must exist) before any DB write; if any fail the entire batch is rejected. Returns `{reply, board_update}`. Requires auth.
+  - `CardOperation` — Pydantic model with `@model_validator` enforcing per-operation required fields.
+  - `_build_messages(board, history, message)` — assembles `[system, ...history, user]` message list.
+  - `_validate_ops_referential(ops, board)` — checks all IDs exist; returns error string or None.
+  - `_apply_operation(conn, op)` — applies a single CardOperation to the DB.
 - `app/board.py` — Board API routes (all require a valid session via `require_auth`):
   - `GET /api/board` — returns the current user's board as `{id, title, columns[{id, title, cards[{id, title, details}]}]}`. Column and card order is by `position` ascending.
   - `POST /api/board/cards` — body: `{column_id, title, details?}`. Creates a card at the end of the column. Returns 201 + `{id, title, details}`.
@@ -34,8 +40,10 @@ auth, the Kanban board API, and (in Part 8+) AI chat.
 ```bash
 cd backend
 uv sync
-DB_PATH=./dev.db uv run uvicorn app.main:app --reload
+DB_PATH=./dev.db OPENROUTER_API_KEY=<your_key> uv run uvicorn app.main:app --reload
 ```
+
+`OPENROUTER_API_KEY` is required for the `POST /api/chat` endpoint. Without it the AI call will fail with a 401 from OpenRouter.
 
 ## Testing
 
