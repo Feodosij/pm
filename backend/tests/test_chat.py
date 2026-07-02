@@ -28,3 +28,29 @@ def authed_client():
 def test_chat_unauthenticated(client):
     res = client.post("/api/chat", json={"message": "hi", "history": []})
     assert res.status_code == 401
+
+
+import json
+from unittest.mock import AsyncMock, patch
+
+
+def test_chat_reply_only(authed_client):
+    mock_reply = json.dumps({"reply": "Sure, happy to help!", "board_update": None})
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=mock_reply)):
+        res = authed_client.post("/api/chat", json={"message": "hello", "history": []})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["reply"] == "Sure, happy to help!"
+    assert data["board_update"] is None
+
+
+def test_chat_malformed_json(authed_client, caplog):
+    import logging
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value="not json at all")):
+        with caplog.at_level(logging.WARNING, logger="app.chat"):
+            res = authed_client.post("/api/chat", json={"message": "hi", "history": []})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["reply"] == "not json at all"
+    assert data["board_update"] is None
+    assert any("not valid JSON" in r.message for r in caplog.records)
