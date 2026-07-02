@@ -158,3 +158,47 @@ def test_chat_valid_delete(authed_client):
     board2 = _get_board(authed_client)
     all_ids = [c["id"] for col in board2["columns"] for c in col["cards"]]
     assert card["id"] not in all_ids
+
+
+def test_chat_multi_op_all_valid(authed_client):
+    board = _get_board(authed_client)
+    # Move first 3 cards from Backlog to Done
+    backlog = board["columns"][0]
+    done_col = next(col for col in board["columns"] if col["title"] == "Done")
+    cards_to_move = backlog["cards"][:3]
+    ops = [
+        {"operation": "move", "card_id": c["id"], "column_id": done_col["id"]}
+        for c in cards_to_move
+    ]
+    payload = json.dumps({"reply": "Moved 3 cards to Done.", "board_update": ops})
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "move all backlog to done", "history": []})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["board_update"] is not None
+    assert len(data["board_update"]) == 3
+    board2 = _get_board(authed_client)
+    done_cards = next(col for col in board2["columns"] if col["title"] == "Done")["cards"]
+    done_ids = {c["id"] for c in done_cards}
+    for c in cards_to_move:
+        assert c["id"] in done_ids, f"card {c['id']} not in Done"
+
+
+def test_chat_multi_op_one_invalid_rejects_all(authed_client):
+    board = _get_board(authed_client)
+    valid_card = board["columns"][0]["cards"][0]
+    done_col = next(col for col in board["columns"] if col["title"] == "Done")
+    ops = [
+        {"operation": "move", "card_id": valid_card["id"], "column_id": done_col["id"]},
+        {"operation": "delete", "card_id": "99999"},  # non-existent
+    ]
+    payload = json.dumps({"reply": "Mixed ops.", "board_update": ops})
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "mixed ops", "history": []})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["board_update"] is None  # batch rejected
+    # valid card must still be in Backlog (not moved)
+    board2 = _get_board(authed_client)
+    backlog_ids = {c["id"] for c in board2["columns"][0]["cards"]}
+    assert valid_card["id"] in backlog_ids
