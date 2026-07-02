@@ -202,3 +202,26 @@ def test_chat_multi_op_one_invalid_rejects_all(authed_client):
     board2 = _get_board(authed_client)
     backlog_ids = {c["id"] for c in board2["columns"][0]["cards"]}
     assert valid_card["id"] in backlog_ids
+
+
+def test_chat_messages_structure(authed_client):
+    """Verifies that messages are built as: [system_prompt, ...history, user_msg]."""
+    mock_reply = json.dumps({"reply": "ok", "board_update": None})
+    history = [
+        {"role": "user", "content": "previous question"},
+        {"role": "assistant", "content": "previous answer"},
+    ]
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=mock_reply)) as mock_fn:
+        authed_client.post("/api/chat", json={"message": "new question", "history": history})
+
+    call_args = mock_fn.call_args
+    messages = call_args[0][0]  # first positional arg
+
+    assert messages[0]["role"] == "system"
+    # System prompt should contain the board JSON (at minimum the word "columns")
+    assert "columns" in messages[0]["content"]
+    # History comes next
+    assert messages[1] == {"role": "user", "content": "previous question"}
+    assert messages[2] == {"role": "assistant", "content": "previous answer"}
+    # Last message is the new user message
+    assert messages[-1] == {"role": "user", "content": "new question"}
