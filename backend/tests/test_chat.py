@@ -68,3 +68,23 @@ def test_chat_invalid_schema(authed_client, caplog):
     assert data["reply"] == "ok"
     assert data["board_update"] is None
     assert any("schema validation" in r.message for r in caplog.records)
+
+
+def test_chat_unknown_card_id(authed_client, caplog):
+    import logging
+    payload = json.dumps({
+        "reply": "Moving card",
+        "board_update": [{"operation": "delete", "card_id": "99999"}],
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        with caplog.at_level(logging.WARNING, logger="app.chat"):
+            res = authed_client.post("/api/chat", json={"message": "delete card 99999", "history": []})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["reply"] == "Moving card"
+    assert data["board_update"] is None
+    assert any("unknown id" in r.message for r in caplog.records)
+    # Verify DB is unchanged — board still has all seeded cards
+    board = authed_client.get("/api/board").json()
+    total = sum(len(col["cards"]) for col in board["columns"])
+    assert total == 10  # seeded board has 10 cards total (3+2+2+1+2)
