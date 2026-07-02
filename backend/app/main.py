@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.auth import router as auth_router
 from app.board import router as board_router
+from app.chat import router as chat_router
 from app.db import init_db
 
 
@@ -18,6 +19,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Project Management API", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(board_router)
+app.include_router(chat_router)
 
 
 @app.get("/api/health")
