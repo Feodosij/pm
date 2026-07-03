@@ -3,6 +3,8 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Generator
 
+from app.constants import USERNAME
+
 _DB_PATH = os.environ.get("DB_PATH", "/data/pm.db")
 
 _SEED_COLUMNS = [
@@ -28,7 +30,6 @@ _SEED_COLUMNS = [
     ]},
 ]
 
-_USERNAME = "user"
 _BOARD_TITLE = "My Board"
 
 
@@ -88,11 +89,11 @@ def init_db(db_path: str | None = None) -> None:
 
 
 def _seed_if_needed(conn: sqlite3.Connection) -> None:
-    row = conn.execute("SELECT id FROM users WHERE username = ?", (_USERNAME,)).fetchone()
+    row = conn.execute("SELECT id FROM users WHERE username = ?", (USERNAME,)).fetchone()
     if row:
         return
 
-    conn.execute("INSERT INTO users (username) VALUES (?)", (_USERNAME,))
+    conn.execute("INSERT INTO users (username) VALUES (?)", (USERNAME,))
     user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     conn.execute("INSERT INTO boards (user_id, title) VALUES (?, ?)", (user_id, _BOARD_TITLE))

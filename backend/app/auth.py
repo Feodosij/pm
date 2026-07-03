@@ -3,12 +3,13 @@ import secrets
 from fastapi import APIRouter, Cookie, HTTPException, Response
 from pydantic import BaseModel
 
+from app.constants import USERNAME as _USERNAME
+
 router = APIRouter()
 
 # In-memory sessions — reset on restart, sufficient for MVP with a single hardcoded user
 _sessions: set[str] = set()
 
-_USERNAME = "user"
 _PASSWORD = "password"
 
 

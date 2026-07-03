@@ -228,6 +228,113 @@ def test_chat_openrouter_error_leaves_board_unchanged(authed_client):
     assert total_after == total_before
 
 
+def test_chat_intra_column_reorder_shift_down(authed_client):
+    """AI can move first card to last position within same column (shift-down reorder)."""
+    board = _get_board(authed_client)
+    backlog = board["columns"][0]          # 3 cards: positions 0, 1, 2
+    first_card  = backlog["cards"][0]
+    second_card = backlog["cards"][1]
+    last_pos = len(backlog["cards"]) - 1   # 2
+    payload = json.dumps({
+        "reply": "Reordered.",
+        "board_update": [{"operation": "move", "card_id": first_card["id"],
+                          "column_id": backlog["id"], "position": last_pos}],
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "move to last", "history": []})
+    assert res.status_code == 200
+    assert res.json()["board_update"] is not None
+    updated = _get_board(authed_client)["columns"][0]["cards"]
+    assert updated[-1]["id"] == first_card["id"],  "first card should now be last"
+    assert updated[0]["id"]  == second_card["id"], "second card should now be first"
+
+
+def test_chat_intra_column_reorder_shift_up(authed_client):
+    """AI can move last card to first position within same column (shift-up reorder)."""
+    board = _get_board(authed_client)
+    backlog = board["columns"][0]          # 3 cards: positions 0, 1, 2
+    last_card   = backlog["cards"][-1]
+    second_card = backlog["cards"][1]
+    payload = json.dumps({
+        "reply": "Reordered.",
+        "board_update": [{"operation": "move", "card_id": last_card["id"],
+                          "column_id": backlog["id"], "position": 0}],
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "move to first", "history": []})
+    assert res.status_code == 200
+    assert res.json()["board_update"] is not None
+    updated = _get_board(authed_client)["columns"][0]["cards"]
+    assert updated[0]["id"]  == last_card["id"],   "last card should now be first"
+    assert updated[-1]["id"] == second_card["id"], "middle card should now be last"
+
+
+def test_chat_same_column_move_without_position_appends_to_end(authed_client):
+    """AI move to same column with no position appends card to end (MAX position)."""
+    board = _get_board(authed_client)
+    backlog = board["columns"][0]          # 3 cards: positions 0, 1, 2
+    first_card = backlog["cards"][0]
+    payload = json.dumps({
+        "reply": "Moved.",
+        "board_update": [{"operation": "move", "card_id": first_card["id"],
+                          "column_id": backlog["id"]}],  # no position
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "move", "history": []})
+    assert res.status_code == 200
+    assert res.json()["board_update"] is not None
+    updated = _get_board(authed_client)["columns"][0]["cards"]
+    assert updated[-1]["id"] == first_card["id"], "card should be last after no-position same-col move"
+
+
+def test_chat_cross_column_move_with_explicit_position(authed_client):
+    """AI move to different column with position=0 inserts at head, shifting existing cards."""
+    board = _get_board(authed_client)
+    backlog = board["columns"][0]          # 3 cards
+    todo    = board["columns"][1]          # 2 cards
+    card    = backlog["cards"][0]
+    orig_todo_first = todo["cards"][0]
+    payload = json.dumps({
+        "reply": "Inserted at head.",
+        "board_update": [{"operation": "move", "card_id": card["id"],
+                          "column_id": todo["id"], "position": 0}],
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)):
+        res = authed_client.post("/api/chat", json={"message": "move", "history": []})
+    assert res.status_code == 200
+    assert res.json()["board_update"] is not None
+    board2     = _get_board(authed_client)
+    todo_cards = next(c for c in board2["columns"] if c["id"] == todo["id"])["cards"]
+    assert todo_cards[0]["id"] == card["id"],            "moved card should be first"
+    assert todo_cards[1]["id"] == orig_todo_first["id"], "original first shifted to second"
+    assert len(todo_cards) == len(todo["cards"]) + 1
+
+
+def test_chat_db_error_during_apply_returns_graceful_response(authed_client, caplog):
+    """DB error during _apply_operation must return 200 with board_update=None and log error."""
+    import logging
+    board = _get_board(authed_client)
+    card  = board["columns"][0]["cards"][0]
+    payload = json.dumps({
+        "reply": "Moving card.",
+        "board_update": [{"operation": "move", "card_id": card["id"],
+                          "column_id": board["columns"][1]["id"]}],
+    })
+    with patch("app.chat.chat_completion", new=AsyncMock(return_value=payload)), \
+         patch("app.chat._apply_operation", side_effect=Exception("DB connection failed")):
+        with caplog.at_level(logging.ERROR, logger="app.chat"):
+            res = authed_client.post("/api/chat", json={"message": "move", "history": []})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["reply"] == "Moving card."
+    assert data["board_update"] is None
+    assert any("Failed to apply" in r.message for r in caplog.records)
+    board2    = _get_board(authed_client)
+    backlog   = next(c for c in board2["columns"] if c["id"] == board["columns"][0]["id"])
+    backlog_ids = {c["id"] for c in backlog["cards"]}
+    assert card["id"] in backlog_ids, "card must remain in source column after DB error"
+
+
 def test_chat_messages_structure(authed_client):
     """Verifies that messages are built as: [system_prompt, ...history, user_msg]."""
     mock_reply = json.dumps({"reply": "ok", "board_update": None})

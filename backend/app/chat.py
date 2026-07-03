@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, model_validator
 
 from app.ai import chat_completion
-from app.auth import require_auth, _USERNAME
-from app.board import _get_board_id, _get_user_id, _load_board, BoardOut
+from app.auth import require_auth
+from app.constants import USERNAME as _USERNAME
+from app.board import _move_card, get_board_id, get_user_id, load_board, BoardOut
 from app.db import get_connection
 
 logger = logging.getLogger(__name__)
@@ -115,11 +116,10 @@ def _apply_operation(conn, op: CardOperation) -> None:
         )
 
     elif op.operation == "move":
-        card_id = int(op.card_id)
+        card_id     = int(op.card_id)
         dest_col_id = int(op.column_id)
         row = conn.execute("SELECT column_id, position FROM cards WHERE id = ?", (card_id,)).fetchone()
-        src_col_id = row["column_id"]
-        old_pos = row["position"]
+        src_col_id  = row["column_id"]
 
         if op.position is not None:
             new_pos = op.position
@@ -132,35 +132,7 @@ def _apply_operation(conn, op: CardOperation) -> None:
                 "SELECT COALESCE(MAX(position), -1) FROM cards WHERE column_id = ?", (dest_col_id,)
             ).fetchone()[0] + 1
 
-        if src_col_id == dest_col_id:
-            if old_pos < new_pos:
-                conn.execute(
-                    "UPDATE cards SET position = position - 1 "
-                    "WHERE column_id = ? AND position > ? AND position <= ?",
-                    (src_col_id, old_pos, new_pos),
-                )
-            elif old_pos > new_pos:
-                conn.execute(
-                    "UPDATE cards SET position = position + 1 "
-                    "WHERE column_id = ? AND position >= ? AND position < ?",
-                    (src_col_id, new_pos, old_pos),
-                )
-            conn.execute("UPDATE cards SET position = ? WHERE id = ?", (new_pos, card_id))
-        else:
-            conn.execute(
-                "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
-                (src_col_id, old_pos),
-            )
-            if op.position is not None:
-                conn.execute(
-                    "UPDATE cards SET position = position + 1 "
-                    "WHERE column_id = ? AND position >= ?",
-                    (dest_col_id, new_pos),
-                )
-            conn.execute(
-                "UPDATE cards SET column_id = ?, position = ? WHERE id = ?",
-                (dest_col_id, new_pos, card_id),
-            )
+        _move_card(conn, card_id, dest_col_id, new_pos)
 
     elif op.operation == "delete":
         card_id = int(op.card_id)
@@ -175,9 +147,9 @@ def _apply_operation(conn, op: CardOperation) -> None:
 @router.post("/api/chat", response_model=ChatResponse)
 async def chat(body: ChatRequest, _: str = Depends(require_auth)):
     with get_connection() as conn:
-        user_id = _get_user_id(conn, _USERNAME)
-        board_id = _get_board_id(conn, user_id)
-        board = _load_board(conn, board_id)
+        user_id = get_user_id(conn, _USERNAME)
+        board_id = get_board_id(conn, user_id)
+        board = load_board(conn, board_id)
 
     messages = _build_messages(board, body.history, body.message)
     try:

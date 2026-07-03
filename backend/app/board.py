@@ -1,10 +1,9 @@
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.auth import require_auth
-from app.db import get_connection, get_db_path
+from app.constants import USERNAME
+from app.db import get_connection
 
 router = APIRouter()
 
@@ -36,10 +35,10 @@ class CreateCardBody(BaseModel):
 
 
 class PatchCardBody(BaseModel):
-    title: Optional[str] = None
-    details: Optional[str] = None
-    column_id: Optional[str] = None
-    position: Optional[int] = None
+    title: str | None = None
+    details: str | None = None
+    column_id: str | None = None
+    position: int | None = None
 
 
 class PatchColumnBody(BaseModel):
@@ -48,21 +47,21 @@ class PatchColumnBody(BaseModel):
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
-def _get_user_id(conn, username: str) -> int:
+def get_user_id(conn, username: str) -> int:
     row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="User not found")
     return row["id"]
 
 
-def _get_board_id(conn, user_id: int) -> int:
+def get_board_id(conn, user_id: int) -> int:
     row = conn.execute("SELECT id FROM boards WHERE user_id = ?", (user_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Board not found")
     return row["id"]
 
 
-def _load_board(conn, board_id: int) -> BoardOut:
+def load_board(conn, board_id: int) -> BoardOut:
     board_row = conn.execute("SELECT id, title FROM boards WHERE id = ?", (board_id,)).fetchone()
     cols = conn.execute(
         "SELECT id, title FROM columns WHERE board_id = ? ORDER BY position",
@@ -82,23 +81,59 @@ def _load_board(conn, board_id: int) -> BoardOut:
     return BoardOut(id=str(board_row["id"]), title=board_row["title"], columns=columns_out)
 
 
+def _move_card(conn, card_id: int, dest_col_id: int, new_pos: int) -> None:
+    """Shift positions and relocate a card. Caller must supply the resolved new_pos."""
+    row = conn.execute(
+        "SELECT column_id, position FROM cards WHERE id = ?", (card_id,)
+    ).fetchone()
+    src_col_id = row["column_id"]
+    old_pos    = row["position"]
+
+    if src_col_id == dest_col_id:
+        if old_pos < new_pos:
+            conn.execute(
+                "UPDATE cards SET position = position - 1 "
+                "WHERE column_id = ? AND position > ? AND position <= ?",
+                (src_col_id, old_pos, new_pos),
+            )
+        elif old_pos > new_pos:
+            conn.execute(
+                "UPDATE cards SET position = position + 1 "
+                "WHERE column_id = ? AND position >= ? AND position < ?",
+                (src_col_id, new_pos, old_pos),
+            )
+        conn.execute("UPDATE cards SET position = ? WHERE id = ?", (new_pos, card_id))
+    else:
+        conn.execute(
+            "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
+            (src_col_id, old_pos),
+        )
+        # Always open slot in dest: when new_pos == MAX+1 (append) this is a no-op.
+        conn.execute(
+            "UPDATE cards SET position = position + 1 WHERE column_id = ? AND position >= ?",
+            (dest_col_id, new_pos),
+        )
+        conn.execute(
+            "UPDATE cards SET column_id = ?, position = ? WHERE id = ?",
+            (dest_col_id, new_pos, card_id),
+        )
+
+
 # ── routes ─────────────────────────────────────────────────────────────────────
 
 @router.get("/api/board", response_model=BoardOut)
 def get_board(session: str = Depends(require_auth)):
-    from app.auth import _USERNAME
     with get_connection() as conn:
-        user_id = _get_user_id(conn, _USERNAME)
-        board_id = _get_board_id(conn, user_id)
-        return _load_board(conn, board_id)
+        user_id = get_user_id(conn, USERNAME)
+        board_id = get_board_id(conn, user_id)
+        return load_board(conn, board_id)
 
 
 @router.post("/api/board/cards", response_model=CardOut, status_code=201)
 def create_card(body: CreateCardBody, session: str = Depends(require_auth)):
-    from app.auth import _USERNAME
     with get_connection() as conn:
-        user_id = _get_user_id(conn, _USERNAME)
-        board_id = _get_board_id(conn, user_id)
+        user_id = get_user_id(conn, USERNAME)
+        board_id = get_board_id(conn, user_id)
         col_id = int(body.column_id)
         col = conn.execute(
             "SELECT id FROM columns WHERE id = ? AND board_id = ?", (col_id, board_id)
@@ -118,10 +153,9 @@ def create_card(body: CreateCardBody, session: str = Depends(require_auth)):
 
 @router.patch("/api/board/cards/{card_id}", response_model=CardOut)
 def patch_card(card_id: str, body: PatchCardBody, session: str = Depends(require_auth)):
-    from app.auth import _USERNAME
     with get_connection() as conn:
-        user_id = _get_user_id(conn, _USERNAME)
-        board_id = _get_board_id(conn, user_id)
+        user_id = get_user_id(conn, USERNAME)
+        board_id = get_board_id(conn, user_id)
 
         row = conn.execute(
             """SELECT c.id, c.title, c.details, c.column_id, c.position
@@ -137,7 +171,6 @@ def patch_card(card_id: str, body: PatchCardBody, session: str = Depends(require
         new_details = body.details if body.details is not None else row["details"]
 
         if body.column_id is not None or body.position is not None:
-            # Move operation
             dest_col_id = int(body.column_id) if body.column_id is not None else row["column_id"]
             dest_col = conn.execute(
                 "SELECT id FROM columns WHERE id = ? AND board_id = ?", (dest_col_id, board_id)
@@ -145,39 +178,10 @@ def patch_card(card_id: str, body: PatchCardBody, session: str = Depends(require
             if not dest_col:
                 raise HTTPException(status_code=404, detail="Destination column not found")
 
-            src_col_id = row["column_id"]
-            old_pos = row["position"]
             new_pos = body.position if body.position is not None else 0
+            _move_card(conn, int(card_id), dest_col_id, new_pos)
 
-            if src_col_id == dest_col_id:
-                # Reorder within same column
-                if old_pos < new_pos:
-                    conn.execute(
-                        "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ? AND position <= ?",
-                        (src_col_id, old_pos, new_pos),
-                    )
-                elif old_pos > new_pos:
-                    conn.execute(
-                        "UPDATE cards SET position = position + 1 WHERE column_id = ? AND position >= ? AND position < ?",
-                        (src_col_id, new_pos, old_pos),
-                    )
-                conn.execute("UPDATE cards SET position = ?, title = ?, details = ? WHERE id = ?",
-                             (new_pos, new_title, new_details, int(card_id)))
-            else:
-                # Move to different column: close gap in source, open slot in dest
-                conn.execute(
-                    "UPDATE cards SET position = position - 1 WHERE column_id = ? AND position > ?",
-                    (src_col_id, old_pos),
-                )
-                conn.execute(
-                    "UPDATE cards SET position = position + 1 WHERE column_id = ? AND position >= ?",
-                    (dest_col_id, new_pos),
-                )
-                conn.execute(
-                    "UPDATE cards SET column_id = ?, position = ?, title = ?, details = ? WHERE id = ?",
-                    (dest_col_id, new_pos, new_title, new_details, int(card_id)),
-                )
-        else:
+        if new_title != row["title"] or new_details != row["details"]:
             conn.execute(
                 "UPDATE cards SET title = ?, details = ? WHERE id = ?",
                 (new_title, new_details, int(card_id)),
@@ -188,10 +192,9 @@ def patch_card(card_id: str, body: PatchCardBody, session: str = Depends(require
 
 @router.delete("/api/board/cards/{card_id}", status_code=204)
 def delete_card(card_id: str, session: str = Depends(require_auth)):
-    from app.auth import _USERNAME
     with get_connection() as conn:
-        user_id = _get_user_id(conn, _USERNAME)
-        board_id = _get_board_id(conn, user_id)
+        user_id = get_user_id(conn, USERNAME)
+        board_id = get_board_id(conn, user_id)
 
         row = conn.execute(
             """SELECT c.id, c.column_id, c.position
@@ -212,10 +215,9 @@ def delete_card(card_id: str, session: str = Depends(require_auth)):
 
 @router.patch("/api/board/columns/{column_id}", response_model=ColumnOut)
 def patch_column(column_id: str, body: PatchColumnBody, session: str = Depends(require_auth)):
-    from app.auth import _USERNAME
     with get_connection() as conn:
-        user_id = _get_user_id(conn, _USERNAME)
-        board_id = _get_board_id(conn, user_id)
+        user_id = get_user_id(conn, USERNAME)
+        board_id = get_board_id(conn, user_id)
 
         row = conn.execute(
             "SELECT id, title FROM columns WHERE id = ? AND board_id = ?",
