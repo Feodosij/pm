@@ -38,7 +38,8 @@ describe('resolveDragMove', () => {
   })
 
   it('resolves a move onto an empty column by id', () => {
-    expect(resolveDragMove(columns, 'card1', 'col2')).toEqual({
+    // Column droppable IDs are prefixed with 'col-' to avoid overlap with card IDs.
+    expect(resolveDragMove(columns, 'card1', 'col-col2')).toEqual({
       sourceColumnId: 'col1',
       destColumnId: 'col2',
       destIndex: 0,

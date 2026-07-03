@@ -24,8 +24,10 @@ export function resolveDragMove(
   const sourceColumn = columns.find(col => col.cards.some(c => c.id === activeId))
   if (!sourceColumn) return null
 
+  // overId is either `col-${columnId}` (column droppable) or a card id.
+  // Prefix check must come first to avoid matching card ids against column ids.
   const destColumn =
-    columns.find(col => col.id === overId) ??
+    columns.find(col => `col-${col.id}` === overId) ??
     columns.find(col => col.cards.some(c => c.id === overId))
   if (!destColumn) return null
 

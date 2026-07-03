@@ -70,10 +70,12 @@ export function useBoard(): BoardHook {
 
   const moveCard = useCallback(
     async (sourceColumnId: string, destColumnId: string, cardId: string, destIndex: number) => {
-      await apiMoveCard(cardId, destColumnId, destIndex)
+      // Optimistic update before the API call so the UI moves instantly.
       setState(prev => {
-        const sourceCol = prev.columns.find(c => c.id === sourceColumnId)!
-        const card = sourceCol.cards.find(c => c.id === cardId)!
+        const sourceCol = prev.columns.find(c => c.id === sourceColumnId)
+        if (!sourceCol) return prev
+        const card = sourceCol.cards.find(c => c.id === cardId)
+        if (!card) return prev
         return {
           columns: prev.columns.map(col => {
             if (col.id === sourceColumnId && col.id === destColumnId) {
@@ -81,9 +83,7 @@ export function useBoard(): BoardHook {
               cards.splice(destIndex, 0, card)
               return { ...col, cards }
             }
-            if (col.id === sourceColumnId) {
-              return { ...col, cards: col.cards.filter(c => c.id !== cardId) }
-            }
+            if (col.id === sourceColumnId) return { ...col, cards: col.cards.filter(c => c.id !== cardId) }
             if (col.id === destColumnId) {
               const cards = [...col.cards]
               cards.splice(destIndex, 0, card)
@@ -93,8 +93,13 @@ export function useBoard(): BoardHook {
           }),
         }
       })
+      try {
+        await apiMoveCard(cardId, destColumnId, destIndex)
+      } catch {
+        await reload()
+      }
     },
-    []
+    [reload]
   )
 
   const renameColumn = useCallback(async (columnId: string, title: string) => {

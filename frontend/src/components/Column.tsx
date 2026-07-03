@@ -19,7 +19,7 @@ export function Column({ column, onAddCard, onDeleteCard, onEditCard, onRenameCo
   const [titleValue, setTitleValue] = useState(column.title)
   const [isAddingCard, setIsAddingCard] = useState(false)
 
-  const { setNodeRef } = useDroppable({ id: column.id })
+  const { setNodeRef } = useDroppable({ id: `col-${column.id}` })
 
   function commitRename() {
     const trimmed = titleValue.trim()
