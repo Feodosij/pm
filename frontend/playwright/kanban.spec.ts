@@ -320,12 +320,12 @@ test.describe('AI Chat Sidebar', () => {
   })
 
   test('sends a message and shows AI reply, triggers board reload on board_update', async ({ page }) => {
-    // Mock the chat endpoint: returns a board_update so the board reloads
+    // Count GET /api/board requests via page.on so we don't interfere with setupMocks
     let boardReloads = 0
-    await page.route('/api/board', async route => {
-      boardReloads++
-      await route.continue()
+    page.on('request', req => {
+      if (req.url().includes('/api/board') && req.method() === 'GET') boardReloads++
     })
+
     await page.route('/api/chat', async route => {
       await route.fulfill({
         status: 200,
@@ -337,7 +337,7 @@ test.describe('AI Chat Sidebar', () => {
       })
     })
 
-    const initialReloads = boardReloads
+    // Listener started fresh — boardReloads is 0. Any board fetch from here on counts.
     await page.getByRole('button', { name: /toggle ai chat/i }).click()
     await page.getByPlaceholder('Message AI…').fill('Move Research competitors to Done')
     await page.getByRole('button', { name: /send/i }).click()
@@ -345,7 +345,8 @@ test.describe('AI Chat Sidebar', () => {
     await expect(page.getByText('Move Research competitors to Done')).toBeVisible()
     await expect(page.getByText('Moved the card to Done!')).toBeVisible({ timeout: 10000 })
     // Board should have been reloaded because board_update was non-null
-    expect(boardReloads).toBeGreaterThan(initialReloads)
+    await page.waitForTimeout(500)
+    expect(boardReloads).toBeGreaterThan(0)
   })
 
   test('shows error message on failed chat request', async ({ page }) => {
@@ -355,6 +356,6 @@ test.describe('AI Chat Sidebar', () => {
     await page.getByRole('button', { name: /toggle ai chat/i }).click()
     await page.getByPlaceholder('Message AI…').fill('hello')
     await page.getByRole('button', { name: /send/i }).click()
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('chat-sidebar').getByRole('alert')).toBeVisible({ timeout: 10000 })
   })
 })
