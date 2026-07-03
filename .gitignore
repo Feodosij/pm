@@ -22,3 +22,4 @@ backend/tests/__pycache__/
 backend/*.pyc
 backend/.coverage
 backend/.pytest_cache/
+backend/*.db
