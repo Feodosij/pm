@@ -180,7 +180,10 @@ async def chat(body: ChatRequest, _: str = Depends(require_auth)):
         board = _load_board(conn, board_id)
 
     messages = _build_messages(board, body.history, body.message)
-    reply_text = await chat_completion(messages)
+    try:
+        reply_text = await chat_completion(messages)
+    except RuntimeError as e:
+        return ChatResponse(reply=f"AI unavailable: {e}", board_update=None)
 
     # Step 1: parse JSON
     try:

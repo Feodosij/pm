@@ -204,6 +204,30 @@ def test_chat_multi_op_one_invalid_rejects_all(authed_client):
     assert valid_card["id"] in backlog_ids
 
 
+def test_chat_openrouter_unavailable_returns_200_with_error_reply(authed_client):
+    """When chat_completion raises RuntimeError (timeout/auth/connection),
+    the endpoint must return 200 with a graceful error reply, not 500."""
+    with patch("app.chat.chat_completion", new=AsyncMock(side_effect=RuntimeError("OpenRouter timed out"))):
+        res = authed_client.post("/api/chat", json={"message": "hi", "history": []})
+    assert res.status_code == 200
+    data = res.json()
+    assert "unavailable" in data["reply"].lower() or "timed out" in data["reply"].lower()
+    assert data["board_update"] is None
+
+
+def test_chat_openrouter_error_leaves_board_unchanged(authed_client):
+    """Board must not be touched when the AI call itself fails."""
+    board_before = authed_client.get("/api/board").json()
+    total_before = sum(len(col["cards"]) for col in board_before["columns"])
+
+    with patch("app.chat.chat_completion", new=AsyncMock(side_effect=RuntimeError("auth failed"))):
+        authed_client.post("/api/chat", json={"message": "delete everything", "history": []})
+
+    board_after = authed_client.get("/api/board").json()
+    total_after = sum(len(col["cards"]) for col in board_after["columns"])
+    assert total_after == total_before
+
+
 def test_chat_messages_structure(authed_client):
     """Verifies that messages are built as: [system_prompt, ...history, user_msg]."""
     mock_reply = json.dumps({"reply": "ok", "board_update": None})

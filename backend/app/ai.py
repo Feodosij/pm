@@ -21,6 +21,7 @@ async def chat_completion(messages: list[dict]) -> str:
         response = await client.chat.completions.create(
             model=MODEL,
             messages=messages,
+            timeout=30.0,
         )
         return response.choices[0].message.content or ""
     except openai.AuthenticationError as e:

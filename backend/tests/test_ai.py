@@ -19,6 +19,20 @@ def _mock_response(content: str) -> MagicMock:
     return resp
 
 
+async def test_chat_completion_passes_timeout_to_openrouter():
+    """chat_completion must pass timeout=30.0 to the OpenRouter API call."""
+    with patch("app.ai._make_client") as make_client:
+        client = MagicMock()
+        create_mock = AsyncMock(return_value=_mock_response("ok"))
+        client.chat.completions.create = create_mock
+        make_client.return_value = client
+
+        await chat_completion(MESSAGES)
+
+    _, kwargs = create_mock.call_args
+    assert kwargs.get("timeout") == 30.0, f"Expected timeout=30.0, got {kwargs.get('timeout')!r}"
+
+
 async def test_chat_completion_returns_answer():
     with patch("app.ai._make_client") as make_client:
         client = MagicMock()
