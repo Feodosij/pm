@@ -2,6 +2,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.auth import router as auth_router
@@ -17,6 +18,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Project Management API", lifespan=lifespan)
+
+# Allow the Next.js dev server (localhost:3000) in local development.
+_dev_origins = os.environ.get("CORS_ORIGINS", "").split(",")
+if _dev_origins := [o.strip() for o in _dev_origins if o.strip()]:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_dev_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 app.include_router(auth_router)
 app.include_router(board_router)
 app.include_router(chat_router)

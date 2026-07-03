@@ -290,3 +290,71 @@ test.describe('Kanban Board', () => {
     await expect(destColumn.locator('text=Research competitors')).toBeVisible()
   })
 })
+
+// ── AI Chat Sidebar ────────────────────────────────────────────────────────────
+
+test.describe('AI Chat Sidebar', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page)
+    await page.goto('/')
+    await page.waitForSelector('[data-testid="column"]')
+  })
+
+  test('AI toggle button is visible in header', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /toggle ai chat/i })).toBeVisible()
+  })
+
+  test('clicking AI button opens and closes the chat sidebar', async ({ page }) => {
+    const toggle = page.getByRole('button', { name: /toggle ai chat/i })
+    await toggle.click()
+    await expect(page.getByTestId('chat-sidebar')).toBeVisible()
+    await toggle.click()
+    await expect(page.getByTestId('chat-sidebar')).not.toBeVisible()
+  })
+
+  test('chat sidebar shows empty state hint and input', async ({ page }) => {
+    await page.getByRole('button', { name: /toggle ai chat/i }).click()
+    await expect(page.getByTestId('chat-sidebar')).toBeVisible()
+    await expect(page.getByPlaceholder('Message AI…')).toBeVisible()
+    await expect(page.getByRole('button', { name: /send/i })).toBeVisible()
+  })
+
+  test('sends a message and shows AI reply, triggers board reload on board_update', async ({ page }) => {
+    // Mock the chat endpoint: returns a board_update so the board reloads
+    let boardReloads = 0
+    await page.route('/api/board', async route => {
+      boardReloads++
+      await route.continue()
+    })
+    await page.route('/api/chat', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          reply: 'Moved the card to Done!',
+          board_update: [{ operation: 'move', card_id: '1', column_id: '5' }],
+        }),
+      })
+    })
+
+    const initialReloads = boardReloads
+    await page.getByRole('button', { name: /toggle ai chat/i }).click()
+    await page.getByPlaceholder('Message AI…').fill('Move Research competitors to Done')
+    await page.getByRole('button', { name: /send/i }).click()
+
+    await expect(page.getByText('Move Research competitors to Done')).toBeVisible()
+    await expect(page.getByText('Moved the card to Done!')).toBeVisible({ timeout: 10000 })
+    // Board should have been reloaded because board_update was non-null
+    expect(boardReloads).toBeGreaterThan(initialReloads)
+  })
+
+  test('shows error message on failed chat request', async ({ page }) => {
+    await page.route('/api/chat', route =>
+      route.fulfill({ status: 500, body: 'Internal Server Error' })
+    )
+    await page.getByRole('button', { name: /toggle ai chat/i }).click()
+    await page.getByPlaceholder('Message AI…').fill('hello')
+    await page.getByRole('button', { name: /send/i }).click()
+    await expect(page.getByRole('alert')).toBeVisible({ timeout: 10000 })
+  })
+})
