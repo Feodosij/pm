@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fetchMe, login, logout, fetchBoard, apiCreateCard, apiEditCard, apiMoveCard, apiDeleteCard, apiRenameColumn } from '../src/lib/api'
+import { fetchMe, login, logout, fetchBoard, apiCreateCard, apiEditCard, apiMoveCard, apiDeleteCard, apiRenameColumn, apiChat } from '../src/lib/api'
 
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
@@ -124,5 +124,24 @@ describe('apiRenameColumn', () => {
   it('throws on non-ok response', async () => {
     mockFetch.mockResolvedValue({ ok: false })
     await expect(apiRenameColumn('col1', 'X')).rejects.toThrow('Failed to rename column')
+  })
+})
+
+describe('apiChat', () => {
+  it('posts message and history to /api/chat and returns response', async () => {
+    const chatResponse = { reply: 'Sure!', board_update: null }
+    mockFetch.mockResolvedValue(okJson(chatResponse))
+    const history = [{ role: 'user' as const, content: 'hi' }]
+    const result = await apiChat('hello', history)
+    expect(result).toEqual(chatResponse)
+    const call = mockFetch.mock.calls[0]
+    expect(call[0]).toBe('/api/chat')
+    expect(call[1].method).toBe('POST')
+    expect(JSON.parse(call[1].body)).toEqual({ message: 'hello', history })
+  })
+
+  it('throws on non-ok response', async () => {
+    mockFetch.mockResolvedValue({ ok: false })
+    await expect(apiChat('hi', [])).rejects.toThrow('Chat request failed')
   })
 })

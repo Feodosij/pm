@@ -15,13 +15,17 @@ import { useBoard } from '@/lib/store'
 import { findCardById, resolveDragMove } from '@/lib/dnd'
 import type { Card as CardType } from '@/lib/types'
 
-export function Board() {
+type BoardProps = {
+  reloadKey?: number
+}
+
+export function Board({ reloadKey }: BoardProps) {
   const { columns, loading, error, reload, addCard, editCard, deleteCard, moveCard, renameColumn } = useBoard()
   const [activeCard, setActiveCard] = useState<CardType | null>(null)
 
   useEffect(() => {
     reload()
-  }, [reload])
+  }, [reload, reloadKey])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })

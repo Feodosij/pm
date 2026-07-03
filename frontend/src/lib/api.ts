@@ -1,4 +1,4 @@
-import type { BoardState, Card } from './types'
+import type { BoardState, Card, ChatMessage, ChatResponse } from './types'
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? ''
 
@@ -81,4 +81,15 @@ export async function apiRenameColumn(columnId: string, title: string): Promise<
     body: JSON.stringify({ title }),
   })
   if (!res.ok) throw new Error('Failed to rename column')
+}
+
+export async function apiChat(message: string, history: ChatMessage[]): Promise<ChatResponse> {
+  const res = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, history }),
+  })
+  if (!res.ok) throw new Error('Chat request failed')
+  return res.json()
 }
